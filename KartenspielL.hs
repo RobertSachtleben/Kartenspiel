@@ -1,6 +1,9 @@
 import Control.Monad.Trans.State
 import Control.Monad.IO.Class
 
+places :: Int
+places = 4
+
 -- State:
 type Cav = Int
 type Inf = Int
@@ -8,25 +11,17 @@ type CNr = Int
 type ANr = Int
 type Corps = (Inf,Cav) 
 type Reserves = Corps
-type Army = (Corps, Corps, Corps, Corps, Reserves)
--- 4 Corps, 5th Reserve
-type Battlefield = (Army, Army)
--- should be changed to ((corps,corps),...)
-
--- Bool: True if Attacking, Charging
+-- own, enemy
+type Place = (Corps,Corps)
+type LastKnown = Place
+type Battlefield = [(Place,LastKnown)]
+-- Bool: isAttacking, isCharging
 type Stance = (Bool,Bool)
-
 type Field = StateT Battlefield IO
-
 data BrokenStatus = Both | Enemy | Own | None
+-- init = CombatPlaces, last = Reserves
 
-fifth  (_,_,_,_,c) = c
-fourth (_,_,_,c,_) = c
-third  (_,_,c,_,_) = c
-second (_,c,_,_,_) = c
-first  (c,_,_,_,_) = c
-
-main = execStateT testT testBF
+--main = execStateT testT testBF
 
 -- subfunctions:
     
@@ -39,47 +34,74 @@ directReserves isPlayer i c nc = state $ \bf ->
         
 
 directReserves' :: Bool -> Inf -> Cav -> CNr -> Battlefield -> Either String (Reserves,Battlefield)
-directReserves' isPlayer i c nc bf = if (i > r51 || c > r52 || 0 > r51 || 0 > r52 || nc > 4 || 0 > nc) 
+directReserves' isPlayer i c nc bf = if isValid
                             then Left "Incorrect Input"
-                            else if (isPlayer) then Right (((r51-i),(r52-c)),(newArm, b))
-                                               else Right (((r51-i),(r52-c)),(b, newArm))
+                            else if isPlayer 
+                                then Right ((fst $ fst newReserves), newBF)
+                                else Right ((snd $ fst newReserves), newBF)
     where
-        r5@(r51,r52) = fifth a
-        r4@(r41,r42) = fourth a
-        r3@(r31,r32) = third a
-        r2@(r21,r22) = second a
-        r1@(r11,r12) = first a
-        a = if (isPlayer) then fst bf
-                          else snd bf
-        b = if (isPlayer) then snd bf
-                          else fst bf
-        newArm = case nc of
-            1 -> (((r11+i),(r12+c)),r2,r3,r4,((r51-i),(r52-c)))
-            2 -> (r1,((r21+i),(r22+c)),r3,r4,((r51-i),(r52-c)))
-            3 -> (r1,r2,((r31+i),(r32+c)),r4,((r51-i),(r52-c)))
-            4 -> (r1,r2,r3,((r41+i),(r42+c)),((r51-i),(r52-c)))
-            _ -> error "still nope"
+        isValid = if isPlayer 
+            then (i > oldRIP || c > oldRCP || 0 > oldRIP || 0 > oldRCP || nc > (places-2) || 0 > nc) 
+            else (i > oldRIA || c > oldRCA || 0 > oldRIA || 0 > oldRCA || nc > (places-2) || 0 > nc) 
+        ((oldRP@(oldRIP,oldRCP),oldRA@(oldRIA,oldRCA)),estimR) = last bf
+        ((oldCP@(oldCIP,oldCCP),oldCA@(oldCIA,oldCCA)),estimC) = bf !! nc
+        newCorps = if isPlayer
+            then (((oldCIP+i,oldCCP+c),oldCA),estimC)
+            else ((oldCP,(oldCIA+i,oldCCA+c)),estimC)
+        newReserves = if isPlayer
+            then (((oldRIP-i,oldRCP-c),oldRA),estimR)
+            else ((oldRP,(oldRIA-i,oldRCA-c)),estimR)
+        beforeC = take nc bf
+        betweenCR = drop (nc+1) $ init bf
+        newBF = beforeC ++ [newCorps] ++ betweenCR ++ [newReserves]
         
+       
 getCurrentDeployment :: Field String
-getCurrentDeployment = state $ \bf -> (show $ fst bf, bf)       
+getCurrentDeployment = state $ \bf -> (showCurrentState bf, bf)       
 
--- resolveBattle 
---   resolvePlace
---     setStance -- must be done before to allow night
---     resolveCombat
+showCurrentState :: Battlefield -> String
+showCurrentState bf = 
+    concatMap printPlace (zip [1..] bf)
+    where
+        printPlace :: (Int,(Place,LastKnown)) -> String
+        printPlace (n,(((i,c),_),(_,(eI,eC)))) =
+            "Sector " ++ (show n) ++ ": " ++ (show i) ++ " ID and " ++ (show c) ++ " CvD against " ++ (show eI) ++ "(?) ID and " ++ (show eC) ++ "(?) CvD" ++ "\n"
 
--- resolveCombat :: (Corps,Stance) -> (Corps,Stance) -> ??
-
-
--- resolveTurn
---   setStances
---   resolvePlace
---     setCharge (?)
---     resolveCombat
-
+checkBroken :: Battlefield -> BrokenStatus
+checkBroken = checkBroken' None 
+    where 
+        checkBroken' :: BrokenStatus -> Battlefield -> BrokenStatus
+        checkBroken' s [] = s
+        checkBroken' s ((x,_):xs) = case s of
+            Both  -> Both
+            Enemy -> case (checkBrokenPlace x) of
+                Both  -> Both
+                Own   -> Both
+                _     -> checkBroken' Enemy xs
+            Own   -> case (checkBrokenPlace x) of
+                Both  -> Both
+                Enemy -> Both
+                _     -> checkBroken' Own xs
+            None  -> checkBroken' (checkBrokenPlace x) xs    
+           
+checkBrokenPlace :: Place -> BrokenStatus
+checkBrokenPlace (cP,cE) = if isBrokenP 
+        then if isBrokenE
+            then Both
+            else Own
+        else if isBrokenE
+            then Enemy
+            else None
+    where
+    isBrokenE = checkBrokenCorps cE
+    isBrokenP = checkBrokenCorps cP 
+    
+checkBrokenCorps :: Corps -> Bool
+checkBrokenCorps (i,c) = (i <= 0) && (c <= 0)               
+                
 --main :: StateT Battlefield IO ()
 --main = put testBF
-  
+  {-
 testT :: Field String
 testT = do
     put testBF
@@ -103,30 +125,7 @@ testT' = do
             return ""
         None  -> do
             liftIO $ print "Next Turn"
-            testT'
-               
--- needs Fix to fold
--- new idea for battlefield: [(Corps,Corps)] -> Last is Reserve, Init are forces -> better               
-checkBroken :: Battlefield -> BrokenStatus
-checkBroken (a,b) 
-    | ownBroken && enemyBroken = Both
-    | enemyBroken = Enemy
-    | ownBroken = Own
-    | otherwise = None
-    where
-        a4 = fourth a
-        a3 = third a
-        a2 = second a
-        a1 = first a
-        b4 = fourth b
-        b3 = third b
-        b2 = second b
-        b1 = first b
-        ownBroken = ((checkBrokenCorps a1) || (checkBrokenCorps a2) || (checkBrokenCorps a3) || (checkBrokenCorps a4))
-        enemyBroken = ((checkBrokenCorps b1) || (checkBrokenCorps b2) || (checkBrokenCorps b3) || (checkBrokenCorps b4))
-        
-checkBrokenCorps :: Corps -> Bool
-checkBrokenCorps (i,c) = (i <= 0) && (c <= 0)        
+            testT'  
 
     
 reinforcePlayer ::  Field String
@@ -303,11 +302,18 @@ takeLosses (i,c) wasCharging n =
         else if (i < n)
             then (0,c-(n-i))
             else (i-n,c)
+      -}
+testCorps = (10,10)
+testReserve = (40,40)
+testPlace = (testCorps,testCorps)
+testSector = (testPlace,testPlace)
+     
       
-      
-testA1 = ((10,10),(10,10),(10,10),(10,10),(40,40)) :: Army
-testA2 = ((2,2),(10,10),(10,10),(10,10),(40,40)) :: Army
-testBF = (testA1,testA2) :: Battlefield
+testBF = [(((10,10),(10,10)),((10,10),(10,10))),
+          (((10,10),(10,10)),((10,10),(10,10))),
+          (((10,10),(10,10)),((10,10),(10,10))),
+          (((10,10),(10,10)),((10,10),(10,10))),
+          (((40,40),(40,40)),((40,40),(40,40)))] :: Battlefield
 
-f :: [Int] -> Int -> Int -> Int -> [Int]
-f l a b n = (take n l) ++ [a] ++ (drop (n+1) (init l)) ++ [b]
+
+ 
