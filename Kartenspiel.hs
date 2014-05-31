@@ -111,56 +111,63 @@ reinforceEnemy = do
     
 resolvePlaces :: Field String
 resolvePlaces = do
-    liftIO $ print "Attack with Corps I?"
-    stance1A <- liftIO $ getLine    
-    liftIO $ print "Attack with Corps II?"
-    stance2A <- liftIO $ getLine    
-    liftIO $ print "Attack with Corps III?"
-    stance3A <- liftIO $ getLine
-    liftIO $ print "Attack with Corps IV?"
-    stance4A <- liftIO $ getLine
-    resolvePlace 1 ((read stance1A),(read stance1C))
-    resolvePlace 2 ((read stance2A),(read stance2C))
-    resolvePlace 3 ((read stance3A),(read stance3C))
-    resolvePlace 4 ((read stance4A),(read stance4C))
+    resolvePlace 1 
+    resolvePlace 2 
+    resolvePlace 3 
+    resolvePlace 4 
 
     
-resolvePlace :: Int -> Stance -> Field String
-resolvePlace n plS@(plA, plC) = do
+resolvePlace :: Int -> Field String
+resolvePlace n = do
+    liftIO $ print $ "Attack with Corps " ++ (show n)
+    plA <- liftIO $ getLine
     bf <- get
-    case (chooseStanceAI n bf) of
-        enS@(enA,enC) -> do 
-            liftIO $ print $ announceStances n plS enS
-            if plA 
+    case (chooseA n bf) of
+        enA -> do 
+            liftIO $ print $ announceA n (read plA) enA
+            if (read plA) 
                 then if enA 
                     then undefined
                     else undefined
                 else if enA 
                     then undefined
-                    else undefined                
+                    else liftIO $ print $ "No combat in the sector of Corps " ++ (show n)              
             return ""
     
     
     
 -- needs rework    
--- Attack, Charge
-chooseStanceAI :: Int -> Battlefield -> Stance
-chooseStanceAI n bf = (False,False)    
+-- Attack
+chooseA :: CNr -> Battlefield -> Bool
+chooseA n bf = False
 
-announceStances :: Int -> Stance -> Stance -> String
-announceStances n pl en = 
-    "Combat in Sector " ++ (show n) ++ ": you are " ++ (mode pl) ++ ", the enemy is " ++ (mode en)
+-- needs rework
+-- charge
+chooseC :: CNr -> Bool -> Battlefield -> Bool 
+chooseC n plA bf = False  
+
+announceA :: CNr -> Bool -> Bool -> String
+announceA n plA enA = 
+    "Attacks in Sector " ++ (show n) ++ ": you are " ++ (modeA plA) ++ ", the enemy is " ++ (modeA enA)
     where
-        mode :: Stance -> String
-        mode (a,c) = (modeA a) ++ (modeC c)
         modeA :: Bool -> String
         modeA m = if m then "attacking"
-                       else "defending"
+                       else "defending"   
+
+announceC :: CNr -> Bool -> Bool -> String
+announceC n plA enA = 
+    "Charges in Sector " ++ (show n) ++ ": you are " ++ (modeC plA) ++ ", the enemy is " ++ (modeC enA)
+    where
         modeC :: Bool -> String
-        modeC m = if m then "(charging)"
-                       else "(not charging)"              
+        modeC m = if m then "charging"
+                       else "not charging"                         
                    
---resolveCombat :: 
+-- CNr -> plA -> enA 
+{-
+resolveCombat :: CNr -> Bool -> Bool -> Field String
+resolveCombat n plA enA = state $ \bf -> do
+    liftIO $ print "Charge?"
+    plA <- liftIO $ getLine -}
         
 testA1 = ((10,10),(10,10),(10,10),(10,10),(40,40)) :: Army
 testA2 = ((10,10),(10,10),(10,10),(10,10),(40,40)) :: Army
