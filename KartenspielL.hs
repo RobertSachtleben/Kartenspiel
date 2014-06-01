@@ -40,8 +40,8 @@ directReserves' isPlayer i c nc bf = if isValid
                                 else Right ((snd $ fst newReserves), newBF)
     where
         isValid = if isPlayer 
-            then (i > oldRIP || c > oldRCP || 0 > oldRIP || 0 > oldRCP || nc > (places-2) || 0 > nc) 
-            else (i > oldRIA || c > oldRCA || 0 > oldRIA || 0 > oldRCA || nc > (places-2) || 0 > nc) 
+            then (i > oldRIP || c > oldRCP || 0 > oldRIP || 0 > oldRCP || nc > places || 0 > nc) 
+            else (i > oldRIA || c > oldRCA || 0 > oldRIA || 0 > oldRCA || nc > places || 0 > nc) 
         ((oldRP@(oldRIP,oldRCP),oldRA@(oldRIA,oldRCA)),estimR) = last bf
         ((oldCP@(oldCIP,oldCCP),oldCA@(oldCIA,oldCCA)),estimC) = bf !! (nc-1)
         newCorps = if isPlayer
@@ -113,14 +113,10 @@ testT' = do
     depl <- getCurrentDeployment
     liftIO $ putStrLn depl
     reinforcePlayer 
-    depl <- getCurrentDeployment
-    liftIO $ putStrLn depl
     reinforceEnemy
-    depl <- getCurrentDeployment
-    liftIO $ putStrLn depl
     resolvePlaces
     bf <- get
-    case (checkBroken bf) of
+    case (checkBroken (init bf)) of
         Both -> do
             depl' <- getCurrentDeployment
             liftIO $ putStrLn depl'    
@@ -360,11 +356,11 @@ reinforce3' :: Int -> (Battlefield, (Place, LastKnown)) -> Battlefield
 reinforce3' _ ([],r) = [r]
 reinforce3' chance ((x@((cp,ce@(i,c)),lk):xs), rsv@((rp,(ri,rc)),lkr)) = 
     if (str < 3) 
-        then if (i+str >= 3)
+        then if (ri+str >= 3)
             then if (chance < 96)
                 then [((cp,(i+(3-str),c)),lk)] ++ (reinforce3' chance (xs, ((rp,(ri-(3-str),rc)),lkr)))
                 else next
-            else if (c+str >= 3)
+            else if (rc+str >= 3)
                 then if (chance < 92)
                     then [((cp,(i,c+(3-str))),lk)] ++ (reinforce3' chance (xs, ((rp,(ri,rc-(3-str))),lkr)))
                     else next
@@ -423,11 +419,11 @@ testPlace = (testCorps,testCorps)
 testSector = (testPlace,testPlace)
      
       
-testBF = [(((2,0),(3,0)),((2,0),(3,0))),
+testBF = [(((2,0),(2,0)),((2,0),(2,0))),
           (((2,0),(2,0)),((2,0),(2,0))),
           (((2,0),(2,0)),((2,0),(2,0))),
           (((2,0),(2,0)),((2,0),(2,0))),
-          (((14,10),(14,10)),((14,10),(14,10)))] :: Battlefield
+          (((10,10),(10,10)),((5,5),(5,5)))] :: Battlefield
 
 
  
