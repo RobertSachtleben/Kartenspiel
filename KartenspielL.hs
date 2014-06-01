@@ -375,13 +375,15 @@ chooseA :: Battlefield -> Int -> [Bool]
 chooseA bf chance = map (chooseA' chance) $ init bf             
             
 chooseA' :: Int -> (Place,LastKnown) -> Bool
-chooseA' chance ((_,rce),(ecp,_)) = if (strengthEnC > strengthPC)
+chooseA' chance ((_,rce),(ecp,_)) = if (strengthEnC > (2*strengthPC))
     then (chance < 80)        
-    else if (strengthEC > strengthPC)
-        then (chance < 70)
-        else if (strengthEC > strengthPnC)
-            then (chance < 60)
-            else (chance < 10)
+    else if (strengthEnC > strengthPC)
+        then (chance < 60)
+        else if (strengthEC > strengthPC)
+            then (chance < 30)
+            else if (strengthEC > strengthPnC)
+                then (chance < 20)
+                else (chance < 5)
     where
         strengthEC = calcStrength rce True
         strengthEnC = calcStrength rce False
@@ -393,16 +395,20 @@ chooseA' chance ((_,rce),(ecp,_)) = if (strengthEnC > strengthPC)
 -- charge
 chooseC :: (Place,LastKnown) -> Bool -> Bool -> Int -> Bool 
 chooseC ((_,rce),(ecp,_)) plA enA chance = if enA
-    then if (strengthEC > strengthPC)
+    then if (strengthEnC > (2*strengthPC))
         then (chance < 80) 
-        else (chance < 30)
+        else if (strengthEC > (2*strengthPC))
+            then (chance < 70) 
+            else if (strengthEC > strengthPC)
+                then (chance < 40) 
+                else (chance < 10)
     else if (strengthPC > strengthEnC)
         then if (strengthPC > (2*strengthEC)) 
             then (chance < 3)
             else if (strengthPC > (2*strengthEnC)) 
-                then (chance < 85)
-                else (chance < 25)
-        else (chance < 75)
+                then (chance < 1)
+                else (chance < 10)
+        else (chance < 50)
     where
         strengthEC = calcStrength rce True
         strengthEnC = calcStrength rce False
@@ -419,7 +425,7 @@ testPlace = (testCorps,testCorps)
 testSector = (testPlace,testPlace)
      
       
-testBF = [(((2,0),(2,0)),((2,0),(2,0))),
+testBF = [(((2,0),(3,0)),((2,0),(3,0))),
           (((2,0),(2,0)),((2,0),(2,0))),
           (((2,0),(2,0)),((2,0),(2,0))),
           (((2,0),(2,0)),((2,0),(2,0))),
