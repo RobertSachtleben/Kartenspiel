@@ -1,6 +1,7 @@
 import Control.Monad.Trans.State
 import Control.Monad.IO.Class
 import Control.Monad
+import System.Random
 
 places :: Int
 places = 4
@@ -158,35 +159,24 @@ reinforcePlayer = do
             liftIO $ putStrLn depl
             return ""
         False -> reinforcePlayer
-    
--- currently dumb    
-reinforceEnemy :: Field String
-reinforceEnemy = do
-    liftIO $ print "Enemy reinforcing..."
-    -- check if any less than 2
-    -- check strongest expected enemy
-    -- identify current enemy weakness (any less than 2)
-    -- identify worthy targets (any expectedly less than own)
-    return ""
-
 
 -- Nr of Places
 resolvePlaces :: Field String
 resolvePlaces = do
     bf <- get
     liftIO $ print "Declare attacks:"
+    attackChance <- liftIO $ getStdRandom (randomR (1::Int,100::Int))
     declareAttacks <- liftIO $ getLine
     if ((length $ ((read declareAttacks) ::[Bool])) == places)
         then let
                 sA = (read declareAttacks) ::[Bool]
-                sB = chooseA bf
+                sB = chooseA bf attackChance
             in  do
                 liftIO $ putStrLn $ printA sA sB
                 resolvePlaces' sA sB            
         else error "wrong input"
-        
-chooseA :: Battlefield -> [Bool]  
-chooseA bf = replicate ((length bf)-1) False         
+
+       
 
 -- both list must be of equal length        
 resolvePlaces' :: [Bool] -> [Bool] -> Field String
@@ -225,8 +215,9 @@ resolvePlaceCombat :: Int -> Bool -> Bool -> Field String
 resolvePlaceCombat n plA enA = do
     liftIO $ print "Charge?"
     plC <- liftIO $ getLine 
+    chargeChance <- liftIO $ getStdRandom (randomR (1::Int,100::Int))
     bf <- get
-    case (chooseC n plA bf) of
+    case (chooseC (bf !! (n-1)) plA enA chargeChance) of
         enC -> do 
             liftIO $ print $ announceC n (read plC) enC
             state <- resolveCombat n (plA,(read plC)) (enA,enC) 
@@ -254,9 +245,7 @@ resolveCombat' n plS enS bf = (losses, newBF)
 calcKnownReserve :: Corps -> Corps -> Reserves -> Reserves -- expCorps -> realCorps -> oldR -> newR
 calcKnownReserve (ei,ec) (ri,rc) (oldRI,oldRC) =
     -- real always at least expected
-    (oldRI - (ri - ei), oldRC - (rc - ec))
-        
-  
+    (oldRI - (ri - ei), oldRC - (rc - ec)) 
 
 -- not called if both defending  
 resolveCombat'' :: Corps -> Stance -> Corps -> Stance -> (String, (Corps, Corps))
@@ -269,14 +258,7 @@ resolveCombat'' ca (plA,plC) cb@(ei,ec) (enA,enC) =
     where     
         sa = calcStrength ca plC
         sb = calcStrength cb enC 
-        before = "Revealed enemy strength: " ++ (show ei) ++ " ID and " ++ (show ec) ++ " CvD! \n" 
-        
-
--- needs rework
--- charge
-chooseC :: CNr -> Bool -> Battlefield -> Bool 
-chooseC n plA bf = False  
-  
+        before = "Revealed enemy strength: " ++ (show ei) ++ " ID and " ++ (show ec) ++ " CvD! \n"  
 
 announceC :: CNr -> Bool -> Bool -> String
 announceC n plA enA = 
@@ -322,6 +304,118 @@ takeLosses (i,c) wasCharging n =
         else if (i < n)
             then (0,c-(n-i))
             else (i-n,c)
+            
+            
+{---------"AI"-functions-------------------}
+
+-- currently dumb    
+reinforceEnemy :: Field String
+reinforceEnemy = do
+    liftIO $ print "Enemy reinforcing..."
+    -- check if any less than 3
+    -- -> with random first check to avoid always reinforcing first sector first
+    -- check strongest expected enemy
+    -- identify current enemy weakness (any less than 2)
+    -- identify worthy targets (any expectedly less than own) 
+    chance <- liftIO $ getStdRandom (randomR (1::Int,100::Int))
+    reinforce3 chance
+    return ""
+{-
+reinforceEnemy' :: Field String
+reinforceEnemy' = do
+    bf <- get 
+    chance <- liftIO $ getStdRandom (randomR (1::Int,100::Int))
+    case (last bf) of 
+        ((_,rr@(ri,rc)),_) -> do
+-}
+        
+
+reinforce3 :: Int -> Field String
+reinforce3 chance = 
+    let
+        --k bf' = div chance (length bf')
+        k bf' = chance * (length bf')
+        result bf' = reinforce3' chance ((rotateL (k bf') $ init bf'), last bf')
+    in
+        state $ \bf -> ("",(rotateR (k bf) $ init (result bf)) ++ [(last (result bf))])
+    
+        
+         
+rotateL :: Int -> [a] -> [a]
+rotateL n xs =  take (length xs) (drop k (cycle xs))
+    where
+        k = mod n (length xs)
+
+rotateR :: Int -> [a] -> [a]
+rotateR n xs =  take (length xs) (drop ((length xs) - k) (cycle xs))
+    where
+        k = mod n (length xs)
+
+f :: Int -> [a] -> [a]
+f n xs = rotateL ((length xs) - k) $ rotateL k xs
+    where k = div n (length xs)
+        
+-- input-BF does not include reserves, output does
+reinforce3' :: Int -> (Battlefield, (Place, LastKnown)) -> Battlefield
+reinforce3' _ ([],r) = [r]
+reinforce3' chance ((x@((cp,ce@(i,c)),lk):xs), rsv@((rp,(ri,rc)),lkr)) = 
+    if (str < 3) 
+        then if (i+str >= 3)
+            then if (chance < 96)
+                then [((cp,(i+(3-str),c)),lk)] ++ (reinforce3' chance (xs, ((rp,(ri-(3-str),rc)),lkr)))
+                else next
+            else if (c+str >= 3)
+                then if (chance < 92)
+                    then [((cp,(i,c+(3-str))),lk)] ++ (reinforce3' chance (xs, ((rp,(ri,rc-(3-str))),lkr)))
+                    else next
+                else next
+        else next
+    where
+        str = calcStrength ce False 
+        next = [x] ++ (reinforce3' chance (xs, rsv))
+        
+       
+chooseA :: Battlefield -> Int -> [Bool]  
+chooseA bf chance = map (chooseA' chance) $ init bf             
+            
+chooseA' :: Int -> (Place,LastKnown) -> Bool
+chooseA' chance ((_,rce),(ecp,_)) = if (strengthEnC > strengthPC)
+    then (chance < 80)        
+    else if (strengthEC > strengthPC)
+        then (chance < 70)
+        else if (strengthEC > strengthPnC)
+            then (chance < 60)
+            else (chance < 10)
+    where
+        strengthEC = calcStrength rce True
+        strengthEnC = calcStrength rce False
+        strengthPC = calcStrength ecp True
+        strengthPnC = calcStrength ecp False
+        
+
+-- needs rework
+-- charge
+chooseC :: (Place,LastKnown) -> Bool -> Bool -> Int -> Bool 
+chooseC ((_,rce),(ecp,_)) plA enA chance = if enA
+    then if (strengthEC > strengthPC)
+        then (chance < 80) 
+        else (chance < 30)
+    else if (strengthPC > strengthEnC)
+        then if (strengthPC > (2*strengthEC)) 
+            then (chance < 3)
+            else if (strengthPC > (2*strengthEnC)) 
+                then (chance < 85)
+                else (chance < 25)
+        else (chance < 75)
+    where
+        strengthEC = calcStrength rce True
+        strengthEnC = calcStrength rce False
+        strengthPC = calcStrength ecp True
+        strengthPnC = calcStrength ecp False
+             
+            
+            
+
       
 testCorps = (10,10)
 testReserve = (40,40)
