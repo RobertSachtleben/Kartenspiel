@@ -1,5 +1,6 @@
 import Control.Monad.Trans.State
 import Control.Monad.IO.Class
+import Control.Monad
 
 places :: Int
 places = 4
@@ -21,9 +22,6 @@ type Field = StateT Battlefield IO
 data BrokenStatus = Both | Enemy | Own | None
 -- init = CombatPlaces, last = Reserves
 
---main = execStateT testT testBF
-
--- subfunctions:
     
 directReserves :: Bool -> Inf -> Cav -> CNr -> Field String    
 directReserves isPlayer i c nc = state $ \bf -> 
@@ -44,15 +42,15 @@ directReserves' isPlayer i c nc bf = if isValid
             then (i > oldRIP || c > oldRCP || 0 > oldRIP || 0 > oldRCP || nc > (places-2) || 0 > nc) 
             else (i > oldRIA || c > oldRCA || 0 > oldRIA || 0 > oldRCA || nc > (places-2) || 0 > nc) 
         ((oldRP@(oldRIP,oldRCP),oldRA@(oldRIA,oldRCA)),estimR) = last bf
-        ((oldCP@(oldCIP,oldCCP),oldCA@(oldCIA,oldCCA)),estimC) = bf !! nc
+        ((oldCP@(oldCIP,oldCCP),oldCA@(oldCIA,oldCCA)),estimC) = bf !! (nc-1)
         newCorps = if isPlayer
             then (((oldCIP+i,oldCCP+c),oldCA),estimC)
             else ((oldCP,(oldCIA+i,oldCCA+c)),estimC)
         newReserves = if isPlayer
             then (((oldRIP-i,oldRCP-c),oldRA),estimR)
             else ((oldRP,(oldRIA-i,oldRCA-c)),estimR)
-        beforeC = take nc bf
-        betweenCR = drop (nc+1) $ init bf
+        beforeC = take (nc-1) bf
+        betweenCR = drop (nc) $ init bf
         newBF = beforeC ++ [newCorps] ++ betweenCR ++ [newReserves]
         
        
@@ -61,11 +59,14 @@ getCurrentDeployment = state $ \bf -> (showCurrentState bf, bf)
 
 showCurrentState :: Battlefield -> String
 showCurrentState bf = 
-    concatMap printPlace (zip [1..] bf)
+    "Current Deployment: \n" ++ (concat $ (map printPlace (zip [1..] (init bf))) ++ [(printReserves (last bf))])
     where
         printPlace :: (Int,(Place,LastKnown)) -> String
         printPlace (n,(((i,c),_),(_,(eI,eC)))) =
-            "Sector " ++ (show n) ++ ": " ++ (show i) ++ " ID and " ++ (show c) ++ " CvD against " ++ (show eI) ++ "(?) ID and " ++ (show eC) ++ "(?) CvD" ++ "\n"
+            "Sector  " ++ (show n) ++ ": " ++ (show i) ++ " ID and " ++ (show c) ++ " CvD against " ++ (show eI) ++ "(?) ID and " ++ (show eC) ++ "(?) CvD" ++ "\n"
+        printReserves :: (Place,LastKnown) -> String
+        printReserves (((i,c),_),(_,(eI,eC))) =
+            "Reserves " ++ ": " ++ (show i) ++ " ID and " ++ (show c) ++ " CvD against " ++ (show eI) ++ "(?) ID and " ++ (show eC) ++ "(?) CvD" ++ "\n"  
 
 checkBroken :: Battlefield -> BrokenStatus
 checkBroken = checkBroken' None 
@@ -99,9 +100,8 @@ checkBrokenPlace (cP,cE) = if isBrokenP
 checkBrokenCorps :: Corps -> Bool
 checkBrokenCorps (i,c) = (i <= 0) && (c <= 0)               
                 
---main :: StateT Battlefield IO ()
---main = put testBF
-  {-
+main = execStateT testT testBF  
+  
 testT :: Field String
 testT = do
     put testBF
@@ -109,25 +109,37 @@ testT = do
   
 testT' :: Field String
 testT' = do
-    reinforcePlayer
+    depl <- getCurrentDeployment
+    liftIO $ putStrLn depl
+    reinforcePlayer 
+    depl <- getCurrentDeployment
+    liftIO $ putStrLn depl
     reinforceEnemy
+    depl <- getCurrentDeployment
+    liftIO $ putStrLn depl
     resolvePlaces
     bf <- get
     case (checkBroken bf) of
         Both -> do
+            depl' <- getCurrentDeployment
+            liftIO $ putStrLn depl'    
             liftIO $ print "Both lines have been broken!"
             return ""
         Enemy -> do
+            depl' <- getCurrentDeployment
+            liftIO $ putStrLn depl'
             liftIO $ print "Enemy line has been broken!"
             return ""
         Own   -> do
+            depl' <- getCurrentDeployment
+            liftIO $ putStrLn depl'
             liftIO $ print "Our line has been broken!"
             return ""
         None  -> do
-            liftIO $ print "Next Turn"
+            liftIO $ print "Next Turn"            
             testT'  
 
-    
+   
 reinforcePlayer ::  Field String
 reinforcePlayer = do
     liftIO $ print "select corps to reinforce"
@@ -140,61 +152,131 @@ reinforcePlayer = do
     liftIO $ print state
     liftIO $ print "done?"
     done <- liftIO $ getLine
-    case done of 
-        "y" -> do
-                bf <- get
-                liftIO $ print $ "Current Deployment:" ++ (show $ fst bf)
-                return ""
-        _   -> reinforcePlayer
+    case (read done) of 
+        True  -> do
+            depl <- getCurrentDeployment
+            liftIO $ putStrLn depl
+            return ""
+        False -> reinforcePlayer
     
 -- currently dumb    
 reinforceEnemy :: Field String
 reinforceEnemy = do
-    liftIO $ print "Enemy reinforcing"
+    liftIO $ print "Enemy reinforcing..."
+    -- check if any less than 2
+    -- check strongest expected enemy
+    -- identify current enemy weakness (any less than 2)
+    -- identify worthy targets (any expectedly less than own)
     return ""
-    
+
+
+-- Nr of Places
 resolvePlaces :: Field String
 resolvePlaces = do
-    resolvePlace 1 
-    resolvePlace 2 
-    resolvePlace 3 
-    resolvePlace 4 
-
-    
-resolvePlace :: Int -> Field String
-resolvePlace n = do
-    liftIO $ print $ "Attack with Corps " ++ (show n) ++ "?"
-    plA <- liftIO $ getLine
     bf <- get
-    case (chooseA n bf) of
-        enA -> do 
-            liftIO $ print $ announceA n (read plA) enA
-            if ((read plA) || enA) 
-                then resolvePlaceCombat n (read plA) enA
-                else do 
-                     liftIO $ print $ "No combat in the sector of Corps " ++ (show n)    
-                     return ""
+    liftIO $ print "Declare attacks:"
+    declareAttacks <- liftIO $ getLine
+    if ((length $ ((read declareAttacks) ::[Bool])) == places)
+        then let
+                sA = (read declareAttacks) ::[Bool]
+                sB = chooseA bf
+            in  do
+                liftIO $ putStrLn $ printA sA sB
+                resolvePlaces' sA sB            
+        else error "wrong input"
+        
+chooseA :: Battlefield -> [Bool]  
+chooseA bf = replicate ((length bf)-1) False         
+
+-- both list must be of equal length        
+resolvePlaces' :: [Bool] -> [Bool] -> Field String
+resolvePlaces' [] [] = return ""
+resolvePlaces' (x:xs) (y:ys) = do
+        resolvePlace nc x y
+        resolvePlaces' xs ys
+    where
+        nc = places - (length xs)
+        
+-- both list must be of equal length
+printA :: [Bool] -> [Bool] -> String
+printA [] [] = ""
+printA (x:xs) (y:ys) = (announceA nc x y)  ++ "\n" ++ (printA xs ys)
+    where
+        nc = places - (length (xs))
+        announceA :: CNr -> Bool -> Bool -> String
+        announceA n plA enA = 
+            "Results: Sector " ++ (show n) ++ ": you are " ++ (modeA plA) ++ ", the enemy is " ++ (modeA enA)
+            where
+                modeA :: Bool -> String
+                modeA m = if m then "attacking"
+                               else "defending" 
+    
+resolvePlace :: Int -> Bool -> Bool -> Field String
+resolvePlace n plA enA = do
+    liftIO $ print $ "Combat in Sector " ++ (show n)
+    if (plA || enA) 
+        then resolvePlaceCombat n plA enA
+        else do 
+            liftIO $ print $ "No combat in the sector of Corps " ++ (show n)    
             return ""
-    
-    
-    
--- needs rework    
--- Attack
-chooseA :: CNr -> Battlefield -> Bool
-chooseA n bf = False
+        
+
+resolvePlaceCombat :: Int -> Bool -> Bool -> Field String        
+resolvePlaceCombat n plA enA = do
+    liftIO $ print "Charge?"
+    plC <- liftIO $ getLine 
+    bf <- get
+    case (chooseC n plA bf) of
+        enC -> do 
+            liftIO $ print $ announceC n (read plC) enC
+            state <- resolveCombat n (plA,(read plC)) (enA,enC) 
+            liftIO $ putStrLn state
+            return ""
+
+
+resolveCombat :: CNr -> Stance -> Stance -> Field String
+resolveCombat nc plS plA = state $ \bf -> (resolveCombat' nc plS plA bf)
+
+resolveCombat' :: CNr -> Stance -> Stance -> Battlefield -> (String, Battlefield)
+resolveCombat' n plS enS bf = (losses, newBF)
+    where 
+        ((ca,cb),(expCB,expCA)) = bf !! (n-1)
+        ((ra,rb),(expRB,expRA)) = last bf
+        (losses, (nca,ncb)) = resolveCombat'' ca plS cb enS
+        nPlace = ((nca,ncb),(nca,ncb)) :: (Place, LastKnown)
+        nRA = calcKnownReserve expCA cb expRA
+        nRB = calcKnownReserve expCB ca expRB
+        nReserve = ((ra,rb),(nRB,nRA))
+        beforeC = take (n-1) bf
+        betweenCR = drop (n) $ init bf
+        newBF = beforeC ++ [nPlace] ++ betweenCR ++ [nReserve]
+         
+calcKnownReserve :: Corps -> Corps -> Reserves -> Reserves -- expCorps -> realCorps -> oldR -> newR
+calcKnownReserve (ei,ec) (ri,rc) (oldRI,oldRC) =
+    -- real always at least expected
+    (oldRI - (ri - ei), oldRC - (rc - ec))
+        
+  
+
+-- not called if both defending  
+resolveCombat'' :: Corps -> Stance -> Corps -> Stance -> (String, (Corps, Corps))
+resolveCombat'' ca (plA,plC) cb@(ei,ec) (enA,enC) = 
+    if plA 
+        then case calcLosses sa sb (plA && enA) of
+            (la, lb) -> (before ++ "Losses: our forces: " ++ (show la) ++ ", enemy forces: " ++ (show lb),(takeLosses ca plC la, takeLosses cb enC lb))
+        else case calcLosses sb sa (plA && enA) of
+            (lb, la) -> (before ++ "Losses: our forces: " ++ (show la) ++ ", enemy forces: " ++ (show lb),(takeLosses ca plC la, takeLosses cb enC lb))       
+    where     
+        sa = calcStrength ca plC
+        sb = calcStrength cb enC 
+        before = "Revealed enemy strength: " ++ (show ei) ++ " ID and " ++ (show ec) ++ " CvD! \n" 
+        
 
 -- needs rework
 -- charge
 chooseC :: CNr -> Bool -> Battlefield -> Bool 
 chooseC n plA bf = False  
-
-announceA :: CNr -> Bool -> Bool -> String
-announceA n plA enA = 
-    "Attacks in Sector " ++ (show n) ++ ": you are " ++ (modeA plA) ++ ", the enemy is " ++ (modeA enA)
-    where
-        modeA :: Bool -> String
-        modeA m = if m then "attacking"
-                       else "defending"   
+  
 
 announceC :: CNr -> Bool -> Bool -> String
 announceC n plA enA = 
@@ -203,69 +285,7 @@ announceC n plA enA =
         modeC :: Bool -> String
         modeC m = if m then "charging"
                        else "not charging"                         
-                 
--- CNr -> plA -> enA
 
-resolvePlaceCombat :: CNr -> Bool -> Bool -> Field String
-resolvePlaceCombat nc plA enA = do
-    liftIO $ print "Charge?"
-    plC <- liftIO $ getLine 
-    bf <- get
-    case (chooseC nc (read plC) bf) of
-        enC -> do 
-            liftIO $ print $ announceA nc (read plC) enC
-            state <- resolveCombat nc (plA,(read plC)) (enA,enC) 
-            liftIO $ print state
-            return ""
-
-resolveCombat :: CNr -> Stance -> Stance -> Field String
-resolveCombat nc plS plA = state $ \bf -> (resolveCombat' nc plS plA bf)
-         
-resolveCombat' :: CNr -> Stance -> Stance -> Battlefield -> (String, Battlefield)
-resolveCombat' nc plS enS (a,b) = 
-    case nc of 
-        1 -> (losses, ((nca,a2,a3,a4,a5),(ncb,b2,b3,b4,b5)))
-        2 -> (losses, ((a1,nca,a3,a4,a5),(b1,ncb,b3,b4,b5)))
-        3 -> (losses, ((a1,a2,nca,a4,a5),(b1,b2,ncb,b4,b5)))
-        _ -> (losses, ((a1,a2,a3,nca,a5),(b1,b2,b3,ncb,b5)))
-    where        
-        a5@(a51,a52) = fifth a
-        a4@(a41,a42) = fourth a
-        a3@(a31,a32) = third a
-        a2@(a21,a22) = second a
-        a1@(a11,a12) = first a
-        b5@(b51,b52) = fifth b
-        b4@(b41,b42) = fourth b
-        b3@(b31,b32) = third b
-        b2@(b21,b22) = second b
-        b1@(b11,b12) = first b
-        ca = case nc of
-            1 -> a1
-            2 -> a2
-            3 -> a3
-            _ -> a4
-        cb = case nc of
-            1 -> b1
-            2 -> b2
-            3 -> b3
-            _ -> b4 
-        (losses, (nca,ncb)) = resolveCombat'' ca plS cb enS
-
-            
-        
--- not called if both defending  
-resolveCombat'' :: Corps -> Stance -> Corps -> Stance -> (String, (Corps, Corps))
-resolveCombat'' ca (plA,plC) cb (enA,enC) = 
-    if plA 
-        then case calcLosses sa sb (plA && enA) of
-            (la, lb) -> ("Losses: our forces: " ++ (show la) ++ ", enemy forces: " ++ (show lb),(takeLosses ca plC la, takeLosses cb enC lb))
-        else case calcLosses sb sa (plA && enA) of
-            (lb, la) -> ("Losses: our forces: " ++ (show la) ++ ", enemy forces: " ++ (show lb),(takeLosses ca plC la, takeLosses cb enC lb))       
-    where     
-        sa = calcStrength ca plC
-        sb = calcStrength cb enC   
-
-        
 calcStrength :: Corps -> Bool -> Int
 calcStrength (i,c) charging = if charging
     then i+2*c
@@ -302,18 +322,18 @@ takeLosses (i,c) wasCharging n =
         else if (i < n)
             then (0,c-(n-i))
             else (i-n,c)
-      -}
+      
 testCorps = (10,10)
 testReserve = (40,40)
 testPlace = (testCorps,testCorps)
 testSector = (testPlace,testPlace)
      
       
-testBF = [(((10,10),(10,10)),((10,10),(10,10))),
-          (((10,10),(10,10)),((10,10),(10,10))),
-          (((10,10),(10,10)),((10,10),(10,10))),
-          (((10,10),(10,10)),((10,10),(10,10))),
-          (((40,40),(40,40)),((40,40),(40,40)))] :: Battlefield
+testBF = [(((2,0),(3,0)),((2,0),(3,0))),
+          (((2,0),(2,0)),((2,0),(2,0))),
+          (((2,0),(2,0)),((2,0),(2,0))),
+          (((2,0),(2,0)),((2,0),(2,0))),
+          (((14,10),(14,10)),((14,10),(14,10)))] :: Battlefield
 
 
  
